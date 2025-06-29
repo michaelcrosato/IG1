@@ -93,6 +93,16 @@ g_game_state = {
         'selected_menu_item': 0,
         'tooltip_text': "",
         'debug_overlay': False,
+    },
+    'menu_state': {
+        'selected_mission': None,
+        'selected_mission_id': None,
+        'squad_slots': [None, None, None],  # Will expand based on mission
+        'squad_loadouts': [{}, {}, {}],     # Weapons/equipment per slot
+        'max_squad_size': 3,
+        'current_slot': 0,
+        'current_loadout_slot': 0,
+        'available_classes': ['soldier', 'sniper', 'scout', 'heavy', 'medic'],
     }
 }
 
@@ -208,11 +218,13 @@ def validate_game_state():
 # ======================================================================
 class GameState(Enum):
     MAIN_MENU = "main_menu"
-    SQUAD_MANAGEMENT = "squad_management"
+    MISSION_SELECTION = "mission_selection"
+    SQUAD_SELECTION = "squad_selection"
+    LOADOUT_SCREEN = "loadout_screen"
     MISSION_BRIEFING = "mission_briefing"
     TACTICAL_COMBAT = "tactical_combat"
     ENEMY_TURN = "enemy_turn"
-    INVENTORY = "inventory"
+    SETTINGS = "settings"
     GAME_OVER = "game_over"
 
 # ======================================================================
@@ -302,8 +314,8 @@ def main():
     g_font = pygame.font.Font(None, 24)
     pygame.display.set_caption("Tactical Squad Game")
     
-    # Initialize with test squad for development
-    init_test_game()
+    # Start in main menu (test game available as "Quick Battle" option)
+    g_game_state['current_state'] = GameState.MAIN_MENU.value
     
     running = True
     while running:
@@ -323,6 +335,123 @@ def main():
         g_clock.tick(Cfg.FPS)
     
     pygame.quit()
+
+def start_selected_mission():
+    """Start the mission with player's selected squad and loadouts.
+    
+    Side effects:
+        Creates squad from menu selections
+        Loads selected map and enemies
+        Transitions to tactical combat
+        
+    Globals:
+        Reads: g_game_state menu selections
+        Writes: g_player_squad, g_enemy_units, g_current_map, g_game_state
+    """
+    global g_player_squad, g_enemy_units, g_current_map, g_game_state
+    
+    menu_state = g_game_state['menu_state']
+    mission = menu_state['selected_mission']
+    
+    # Clear existing units
+    g_player_squad = []
+    g_enemy_units = []
+    
+    # Create player squad from selections
+    spawn_positions = [(2, 2), (3, 2), (4, 2), (2, 3), (3, 3), (4, 3)]  # Default spawn area
+    
+    for i, class_name in enumerate(menu_state['squad_slots']):
+        if class_name is not None and i < len(spawn_positions):
+            # Create character
+            x, y = spawn_positions[i]
+            unit = create_character(class_name, x, y)
+            
+            # Apply weapon loadout
+            loadout = menu_state['squad_loadouts'][i]
+            if loadout.get('primary_weapon'):
+                unit[K_EQUIPMENT]['primary_weapon'] = loadout['primary_weapon']
+            
+            g_player_squad.append(unit)
+    
+    # Load map (use first available map for now, could be mission-specific)
+    map_file = mission.get('map_file', 'map_01')
+    load_map(map_file)
+    
+    # Set first unit as active
+    if g_player_squad:
+        g_game_state['active_unit_id'] = g_player_squad[0][K_ID]
+    
+    # Clear combat log and reset turn counter
+    g_game_state['combat_log'] = []
+    g_game_state['turn_count'] = 1
+    
+    # Transition to combat
+    g_game_state['current_state'] = GameState.TACTICAL_COMBAT.value
+    
+    print(f"[MISSION] Started '{mission['name']}' with {len(g_player_squad)} squad members")
+    g_game_state['combat_log'].append(f"Mission '{mission['name']}' begins!")
+
+def load_map(map_name: str):
+    """Load a map from JSON file.
+    
+    Side effects:
+        Replaces g_current_map
+        Spawns units based on map data
+        
+    Globals:
+        Writes: g_current_map, g_enemy_units
+    """
+    global g_current_map, g_enemy_units
+    
+    map_data = safe_load_json(f'data/maps/{map_name}.json', {})
+    if not map_data:
+        log_error(f"Failed to load map: {map_name}")
+        # Create default map if load fails
+        init_default_map()
+        return
+    
+    # Create map from data or use simple generation for now
+    map_width = map_data.get('width', 20)
+    map_height = map_data.get('height', 15)
+    
+    g_current_map = []
+    for y in range(map_height):
+        row = []
+        for x in range(map_width):
+            # Create tiles based on pattern (simplified for now)
+            if x == 10 and 5 <= y <= 10:  # Vertical wall
+                tile = {K_TYPE: 'wall', K_COVER: 100, K_BLOCKS_SIGHT: True, K_BLOCKS_MOVE: True}
+            elif (x == 5 or x == 15) and (y == 3 or y == 12):  # Some crates
+                tile = {K_TYPE: 'crate', K_COVER: 50, K_BLOCKS_SIGHT: False, K_BLOCKS_MOVE: True}
+            else:
+                tile = {K_TYPE: 'floor', K_COVER: 0, K_BLOCKS_SIGHT: False, K_BLOCKS_MOVE: False}
+            row.append(tile)
+        g_current_map.append(row)
+    
+    # Spawn enemies from map data
+    for spawn in map_data.get('enemy_spawns', []):
+        enemy = create_character(spawn['template'], spawn['x'], spawn['y'])
+        enemy[K_FACTION] = 'enemy'
+        g_enemy_units.append(enemy)
+    
+    print(f"[MAP] Loaded {map_name} ({map_width}x{map_height}) with {len(g_enemy_units)} enemies")
+
+def init_default_map():
+    """Create a default map if map loading fails."""
+    global g_current_map
+    
+    g_current_map = []
+    for y in range(15):
+        row = []
+        for x in range(20):
+            if x == 10 and 5 <= y <= 10:  # Vertical wall
+                tile = {K_TYPE: 'wall', K_COVER: 100, K_BLOCKS_SIGHT: True, K_BLOCKS_MOVE: True}
+            elif (x == 5 or x == 15) and (y == 3 or y == 12):  # Some crates
+                tile = {K_TYPE: 'crate', K_COVER: 50, K_BLOCKS_SIGHT: False, K_BLOCKS_MOVE: True}
+            else:
+                tile = {K_TYPE: 'floor', K_COVER: 0, K_BLOCKS_SIGHT: False, K_BLOCKS_MOVE: False}
+            row.append(tile)
+        g_current_map.append(row)
 
 def init_test_game():
     """Initialize a test game for development.
@@ -419,7 +548,17 @@ def handle_input(event: pygame.event.Event):
     
     # State-specific input handling
     if current_state == GameState.MAIN_MENU:
-        handle_menu_input(event)
+        handle_main_menu_input(event)
+    elif current_state == GameState.MISSION_SELECTION:
+        handle_mission_selection_input(event)
+    elif current_state == GameState.SQUAD_SELECTION:
+        handle_squad_selection_input(event)
+    elif current_state == GameState.LOADOUT_SCREEN:
+        handle_loadout_input(event)
+    elif current_state == GameState.MISSION_BRIEFING:
+        handle_briefing_input(event)
+    elif current_state == GameState.SETTINGS:
+        handle_settings_input(event)
     elif current_state == GameState.TACTICAL_COMBAT:
         handle_combat_input(event)
 
@@ -917,6 +1056,16 @@ def render_frame():
     
     if current_state == GameState.MAIN_MENU:
         render_main_menu()
+    elif current_state == GameState.MISSION_SELECTION:
+        render_mission_selection()
+    elif current_state == GameState.SQUAD_SELECTION:
+        render_squad_selection()
+    elif current_state == GameState.LOADOUT_SCREEN:
+        render_loadout_screen()
+    elif current_state == GameState.MISSION_BRIEFING:
+        render_mission_briefing()
+    elif current_state == GameState.SETTINGS:
+        render_settings()
     elif current_state == GameState.TACTICAL_COMBAT:
         render_map()
         render_units()
@@ -1109,9 +1258,449 @@ def render_debug_overlay():
             g_screen.blit(coord_text, (screen_x + 2, screen_y + 2))
 
 def render_main_menu():
-    """Render main menu."""
-    title_text = g_font.render("Tactical Squad Game", True, (255, 255, 255))
-    g_screen.blit(title_text, (Cfg.SCREEN_WIDTH // 2 - 100, Cfg.SCREEN_HEIGHT // 2))
+    """Render main menu with navigation options.
+    
+    Side effects:
+        Draws main menu to g_screen
+        
+    Globals:
+        Reads: g_game_state, g_font, g_screen
+        Writes: g_screen
+    """
+    # Background
+    g_screen.fill((20, 30, 40))
+    
+    # Title
+    title_font = pygame.font.Font(None, 72)
+    title_text = title_font.render("TACTICAL SQUAD", True, (255, 255, 100))
+    title_rect = title_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 150))
+    g_screen.blit(title_text, title_rect)
+    
+    subtitle_text = g_font.render("Turn-Based Tactical Combat", True, (200, 200, 200))
+    subtitle_rect = subtitle_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 200))
+    g_screen.blit(subtitle_text, subtitle_rect)
+    
+    # Menu options
+    menu_items = [
+        "Start Mission",
+        "Quick Battle (Test)",
+        "Settings", 
+        "Exit"
+    ]
+    
+    selected_item = g_game_state['ui_state']['selected_menu_item']
+    
+    for i, item in enumerate(menu_items):
+        y_pos = 300 + i * 60
+        color = (255, 255, 100) if i == selected_item else (200, 200, 200)
+        
+        # Highlight selected item
+        if i == selected_item:
+            highlight_rect = pygame.Rect(Cfg.SCREEN_WIDTH // 2 - 150, y_pos - 10, 300, 40)
+            pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+            pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+        
+        text = g_font.render(item, True, color)
+        text_rect = text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, y_pos))
+        g_screen.blit(text, text_rect)
+    
+    # Instructions
+    instruction_text = g_font.render("Use UP/DOWN arrows and ENTER to select", True, (150, 150, 150))
+    instruction_rect = instruction_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, Cfg.SCREEN_HEIGHT - 50))
+    g_screen.blit(instruction_text, instruction_rect)
+
+def render_mission_selection():
+    """Render mission selection screen.
+    
+    Side effects:
+        Draws mission selection UI to g_screen
+        
+    Globals:
+        Reads: g_game_state, g_mission_data, g_font, g_screen
+        Writes: g_screen
+    """
+    g_screen.fill((25, 35, 45))
+    
+    # Title
+    title_text = g_font.render("SELECT MISSION", True, (255, 255, 100))
+    title_rect = title_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 50))
+    g_screen.blit(title_text, title_rect)
+    
+    # Mission list
+    mission_keys = list(g_mission_data.keys())
+    selected = g_game_state['ui_state']['selected_menu_item']
+    
+    y_start = 120
+    for i, mission_id in enumerate(mission_keys):
+        mission = g_mission_data[mission_id]
+        y_pos = y_start + i * 160
+        
+        # Mission panel
+        panel_rect = pygame.Rect(50, y_pos - 10, Cfg.SCREEN_WIDTH - 100, 140)
+        panel_color = (80, 100, 120) if i == selected else (50, 60, 70)
+        border_color = (120, 140, 160) if i == selected else (70, 80, 90)
+        
+        pygame.draw.rect(g_screen, panel_color, panel_rect)
+        pygame.draw.rect(g_screen, border_color, panel_rect, 2)
+        
+        # Mission name
+        name_color = (255, 255, 100) if i == selected else (200, 200, 200)
+        name_text = g_font.render(mission['name'], True, name_color)
+        g_screen.blit(name_text, (70, y_pos))
+        
+        # Mission briefing (first line)
+        if mission.get('briefing_text'):
+            brief_text = mission['briefing_text'][0]
+            brief_color = (180, 180, 180) if i == selected else (150, 150, 150)
+            brief_render = g_font.render(brief_text[:80] + "..." if len(brief_text) > 80 else brief_text, 
+                                       True, brief_color)
+            g_screen.blit(brief_render, (70, y_pos + 25))
+        
+        # Objectives count
+        obj_count = len(mission.get('objectives', []))
+        obj_text = g_font.render(f"Objectives: {obj_count}", True, (160, 160, 160))
+        g_screen.blit(obj_text, (70, y_pos + 50))
+        
+        # Rewards
+        if mission.get('rewards', {}).get('cash'):
+            reward_text = g_font.render(f"Reward: ${mission['rewards']['cash']}", True, (100, 255, 100))
+            g_screen.blit(reward_text, (70, y_pos + 75))
+    
+    # Instructions
+    instruction_text = g_font.render("UP/DOWN: Select | ENTER: Choose Mission | ESC: Back", True, (150, 150, 150))
+    instruction_rect = instruction_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, Cfg.SCREEN_HEIGHT - 30))
+    g_screen.blit(instruction_text, instruction_rect)
+
+def render_squad_selection():
+    """Render squad selection screen.
+    
+    Side effects:
+        Draws squad selection UI to g_screen
+        
+    Globals:
+        Reads: g_game_state, g_unit_templates, g_font, g_screen
+        Writes: g_screen
+    """
+    g_screen.fill((30, 40, 50))
+    
+    # Title
+    title_text = g_font.render("SQUAD SELECTION", True, (255, 255, 100))
+    title_rect = title_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 30))
+    g_screen.blit(title_text, title_rect)
+    
+    menu_state = g_game_state['menu_state']
+    selected = g_game_state['ui_state']['selected_menu_item']
+    
+    # Available classes (left side)
+    class_panel = pygame.Rect(50, 80, 400, 500)
+    pygame.draw.rect(g_screen, (40, 50, 60), class_panel)
+    pygame.draw.rect(g_screen, (80, 100, 120), class_panel, 2)
+    
+    class_title = g_font.render("Available Classes:", True, (200, 200, 200))
+    g_screen.blit(class_title, (70, 90))
+    
+    for i, class_name in enumerate(menu_state['available_classes']):
+        y_pos = 120 + i * 80
+        template = g_unit_templates.get(class_name, {})
+        
+        # Highlight if selected
+        if i == selected:
+            highlight_rect = pygame.Rect(60, y_pos - 5, 380, 70)
+            pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+            pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+        
+        # Class name
+        name_color = (255, 255, 100) if i == selected else (200, 200, 200)
+        name_text = g_font.render(template.get('name', class_name.title()), True, name_color)
+        g_screen.blit(name_text, (70, y_pos))
+        
+        # Stats
+        base_stats = template.get('base_stats', {})
+        stats_text = f"HP: {base_stats.get('health', 100)} | AP: {base_stats.get('action_points', 10)}"
+        stats_render = g_font.render(stats_text, True, (160, 160, 160))
+        g_screen.blit(stats_render, (70, y_pos + 20))
+        
+        # Attributes
+        attrs = template.get('attributes', {})
+        attr_text = f"Marks: {attrs.get('marksmanship', 70)} | Agil: {attrs.get('agility', 60)}"
+        attr_render = g_font.render(attr_text, True, (140, 140, 140))
+        g_screen.blit(attr_render, (70, y_pos + 40))
+    
+    # Squad slots (right side)
+    squad_panel = pygame.Rect(500, 80, 350, 500)
+    pygame.draw.rect(g_screen, (40, 50, 60), squad_panel)
+    pygame.draw.rect(g_screen, (80, 100, 120), squad_panel, 2)
+    
+    squad_title = g_font.render("Squad Composition:", True, (200, 200, 200))
+    g_screen.blit(squad_title, (520, 90))
+    
+    for i in range(menu_state['max_squad_size']):
+        y_pos = 120 + i * 60
+        slot_selection = len(menu_state['available_classes']) + i
+        
+        # Highlight if selected
+        if slot_selection == selected:
+            highlight_rect = pygame.Rect(510, y_pos - 5, 330, 50)
+            pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+            pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+        
+        slot_text = f"Slot {i + 1}: "
+        if menu_state['squad_slots'][i]:
+            template = g_unit_templates.get(menu_state['squad_slots'][i], {})
+            slot_text += template.get('name', menu_state['squad_slots'][i].title())
+            color = (100, 255, 100)
+        else:
+            slot_text += "Empty"
+            color = (160, 160, 160)
+        
+        slot_render = g_font.render(slot_text, True, color)
+        g_screen.blit(slot_render, (520, y_pos))
+    
+    # Continue option
+    continue_selection = len(menu_state['available_classes']) + menu_state['max_squad_size']
+    if continue_selection == selected:
+        highlight_rect = pygame.Rect(500, 400, 350, 40)
+        pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+        pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+    
+    squad_filled = any(slot is not None for slot in menu_state['squad_slots'])
+    continue_color = (100, 255, 100) if squad_filled else (100, 100, 100)
+    continue_text = g_font.render("Continue to Loadout", True, continue_color)
+    g_screen.blit(continue_text, (520, 410))
+    
+    # Instructions
+    instruction_lines = [
+        "UP/DOWN: Navigate | ENTER: Select/Clear | ESC: Back",
+        "Select classes to add to squad, select slots to clear them"
+    ]
+    for i, line in enumerate(instruction_lines):
+        instruction_text = g_font.render(line, True, (150, 150, 150))
+        instruction_rect = instruction_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, Cfg.SCREEN_HEIGHT - 40 + i * 20))
+        g_screen.blit(instruction_text, instruction_rect)
+
+def render_loadout_screen():
+    """Render loadout screen.
+    
+    Side effects:
+        Draws loadout UI to g_screen
+        
+    Globals:
+        Reads: g_game_state, g_weapon_data, g_unit_templates, g_font, g_screen
+        Writes: g_screen
+    """
+    g_screen.fill((35, 45, 55))
+    
+    # Title
+    title_text = g_font.render("WEAPON LOADOUT", True, (255, 255, 100))
+    title_rect = title_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 30))
+    g_screen.blit(title_text, title_rect)
+    
+    menu_state = g_game_state['menu_state']
+    selected = g_game_state['ui_state']['selected_menu_item']
+    current_slot = menu_state['current_loadout_slot']
+    
+    # Ensure current_slot points to a valid squad member
+    if current_slot >= len(menu_state['squad_slots']) or menu_state['squad_slots'][current_slot] is None:
+        # Find first valid slot
+        for i, slot in enumerate(menu_state['squad_slots']):
+            if slot is not None:
+                menu_state['current_loadout_slot'] = i
+                current_slot = i
+                break
+    
+    # Current squad member info (top)
+    if current_slot < len(menu_state['squad_slots']) and menu_state['squad_slots'][current_slot]:
+        class_name = menu_state['squad_slots'][current_slot]
+        template = g_unit_templates.get(class_name, {})
+        
+        member_panel = pygame.Rect(50, 70, Cfg.SCREEN_WIDTH - 100, 80)
+        pygame.draw.rect(g_screen, (50, 70, 90), member_panel)
+        pygame.draw.rect(g_screen, (100, 120, 140), member_panel, 2)
+        
+        member_text = f"Configuring: Slot {current_slot + 1} - {template.get('name', class_name.title())}"
+        member_render = g_font.render(member_text, True, (255, 255, 255))
+        g_screen.blit(member_render, (70, 85))
+        
+        # Current weapon
+        current_weapon = menu_state['squad_loadouts'][current_slot].get('primary_weapon')
+        weapon_text = "Current Weapon: "
+        if current_weapon:
+            weapon_info = g_weapon_data.get(current_weapon, {})
+            weapon_text += weapon_info.get('name', current_weapon)
+        else:
+            weapon_text += "None"
+        weapon_render = g_font.render(weapon_text, True, (200, 200, 200))
+        g_screen.blit(weapon_render, (70, 110))
+    
+    # Available weapons (left side)
+    weapon_panel = pygame.Rect(50, 170, 500, 400)
+    pygame.draw.rect(g_screen, (40, 50, 60), weapon_panel)
+    pygame.draw.rect(g_screen, (80, 100, 120), weapon_panel, 2)
+    
+    weapon_title = g_font.render("Available Weapons:", True, (200, 200, 200))
+    g_screen.blit(weapon_title, (70, 180))
+    
+    weapon_keys = list(g_weapon_data.keys())
+    for i, weapon_id in enumerate(weapon_keys):
+        y_pos = 210 + i * 50
+        weapon = g_weapon_data[weapon_id]
+        
+        # Highlight if selected
+        if i == selected:
+            highlight_rect = pygame.Rect(60, y_pos - 5, 480, 40)
+            pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+            pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+        
+        # Weapon name
+        name_color = (255, 255, 100) if i == selected else (200, 200, 200)
+        name_text = g_font.render(weapon['name'], True, name_color)
+        g_screen.blit(name_text, (70, y_pos))
+        
+        # Weapon stats
+        stats_text = f"Dmg: {weapon['damage']} | Range: {weapon['range']} | AP: {weapon['ap_cost']}"
+        stats_render = g_font.render(stats_text, True, (160, 160, 160))
+        g_screen.blit(stats_render, (70, y_pos + 20))
+    
+    # Squad overview (right side)
+    squad_panel = pygame.Rect(580, 170, 300, 400)
+    pygame.draw.rect(g_screen, (40, 50, 60), squad_panel)
+    pygame.draw.rect(g_screen, (80, 100, 120), squad_panel, 2)
+    
+    squad_title = g_font.render("Squad Overview:", True, (200, 200, 200))
+    g_screen.blit(squad_title, (600, 180))
+    
+    for i, class_name in enumerate(menu_state['squad_slots']):
+        if class_name is not None:
+            y_pos = 210 + i * 60
+            
+            # Highlight current slot
+            if i == current_slot:
+                highlight_rect = pygame.Rect(590, y_pos - 5, 280, 50)
+                pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+                pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+            
+            template = g_unit_templates.get(class_name, {})
+            slot_text = f"{i + 1}. {template.get('name', class_name.title())}"
+            slot_color = (255, 255, 100) if i == current_slot else (200, 200, 200)
+            slot_render = g_font.render(slot_text, True, slot_color)
+            g_screen.blit(slot_render, (600, y_pos))
+            
+            # Assigned weapon
+            assigned_weapon = menu_state['squad_loadouts'][i].get('primary_weapon')
+            if assigned_weapon:
+                weapon_info = g_weapon_data.get(assigned_weapon, {})
+                weapon_text = weapon_info.get('name', assigned_weapon)[:20]
+            else:
+                weapon_text = "No weapon"
+            weapon_render = g_font.render(weapon_text, True, (140, 140, 140))
+            g_screen.blit(weapon_render, (600, y_pos + 20))
+    
+    # Control buttons
+    continue_selection = len(weapon_keys)
+    back_selection = len(weapon_keys) + 1
+    
+    # Continue button
+    if continue_selection == selected:
+        highlight_rect = pygame.Rect(50, 590, 200, 40)
+        pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+        pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+    
+    continue_text = g_font.render("Continue to Briefing", True, (100, 255, 100))
+    g_screen.blit(continue_text, (60, 600))
+    
+    # Back button
+    if back_selection == selected:
+        highlight_rect = pygame.Rect(280, 590, 150, 40)
+        pygame.draw.rect(g_screen, (60, 80, 100), highlight_rect)
+        pygame.draw.rect(g_screen, (100, 120, 140), highlight_rect, 2)
+    
+    back_text = g_font.render("Back to Squad", True, (255, 100, 100))
+    g_screen.blit(back_text, (290, 600))
+    
+    # Instructions
+    instruction_lines = [
+        "LEFT/RIGHT: Switch Squad Member | UP/DOWN: Select Weapon | ENTER: Assign",
+        "ESC: Back to Squad Selection"
+    ]
+    for i, line in enumerate(instruction_lines):
+        instruction_text = g_font.render(line, True, (150, 150, 150))
+        instruction_rect = instruction_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, Cfg.SCREEN_HEIGHT - 30 + i * 15))
+        g_screen.blit(instruction_text, instruction_rect)
+
+def render_mission_briefing():
+    """Render final mission briefing screen.
+    
+    Side effects:
+        Draws mission briefing UI to g_screen
+        
+    Globals:
+        Reads: g_game_state, g_unit_templates, g_weapon_data, g_font, g_screen
+        Writes: g_screen
+    """
+    g_screen.fill((40, 50, 60))
+    
+    # Title
+    title_text = g_font.render("MISSION BRIEFING", True, (255, 255, 100))
+    title_rect = title_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 30))
+    g_screen.blit(title_text, title_rect)
+    
+    menu_state = g_game_state['menu_state']
+    mission = menu_state['selected_mission']
+    
+    if mission:
+        # Mission name
+        mission_name = g_font.render(mission['name'], True, (255, 255, 255))
+        mission_rect = mission_name.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 70))
+        g_screen.blit(mission_name, mission_rect)
+        
+        # Briefing text
+        y_pos = 110
+        for line in mission.get('briefing_text', []):
+            line_text = g_font.render(line, True, (200, 200, 200))
+            line_rect = line_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, y_pos))
+            g_screen.blit(line_text, line_rect)
+            y_pos += 30
+        
+        # Objectives
+        obj_title = g_font.render("OBJECTIVES:", True, (255, 255, 100))
+        g_screen.blit(obj_title, (100, y_pos + 20))
+        y_pos += 50
+        
+        for i, obj in enumerate(mission.get('objectives', [])):
+            obj_text = f"• {obj['description']}"
+            obj_render = g_font.render(obj_text, True, (180, 180, 180))
+            g_screen.blit(obj_render, (120, y_pos))
+            y_pos += 25
+        
+        # Squad summary
+        squad_title = g_font.render("SQUAD DEPLOYMENT:", True, (255, 255, 100))
+        g_screen.blit(squad_title, (100, y_pos + 20))
+        y_pos += 50
+        
+        for i, class_name in enumerate(menu_state['squad_slots']):
+            if class_name is not None:
+                template = g_unit_templates.get(class_name, {})
+                weapon = menu_state['squad_loadouts'][i].get('primary_weapon')
+                weapon_name = g_weapon_data.get(weapon, {}).get('name', 'Unarmed') if weapon else 'Unarmed'
+                
+                squad_text = f"• {template.get('name', class_name.title())} - {weapon_name}"
+                squad_render = g_font.render(squad_text, True, (180, 180, 180))
+                g_screen.blit(squad_render, (120, y_pos))
+                y_pos += 25
+    
+    # Deploy button
+    deploy_rect = pygame.Rect(Cfg.SCREEN_WIDTH // 2 - 100, Cfg.SCREEN_HEIGHT - 100, 200, 50)
+    pygame.draw.rect(g_screen, (100, 150, 100), deploy_rect)
+    pygame.draw.rect(g_screen, (150, 200, 150), deploy_rect, 3)
+    
+    deploy_text = g_font.render("DEPLOY SQUAD", True, (255, 255, 255))
+    deploy_text_rect = deploy_text.get_rect(center=deploy_rect.center)
+    g_screen.blit(deploy_text, deploy_text_rect)
+    
+    # Instructions
+    instruction_text = g_font.render("ENTER: Deploy to Mission | ESC: Back to Loadout", True, (150, 150, 150))
+    instruction_rect = instruction_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, Cfg.SCREEN_HEIGHT - 30))
+    g_screen.blit(instruction_text, instruction_rect)
 
 # ======================================================================
 # === [11] COMBAT SYSTEM
@@ -1514,12 +2103,247 @@ def load_game_data():
     print(f"[INIT] Loaded {len(g_weapon_data)} weapons")
     print(f"[INIT] Loaded {len(g_mission_data)} missions")
 
-def handle_menu_input(event: pygame.event.Event):
-    """Handle main menu input."""
+def handle_main_menu_input(event: pygame.event.Event):
+    """Handle main menu input.
+    
+    Side effects:
+        Changes menu selection or game state
+        
+    Globals:
+        Reads: g_game_state
+        Writes: g_game_state
+    """
     if event.type == pygame.KEYDOWN:
-        if event.key == pygame.K_SPACE:
-            # Start test game
-            init_test_game()
+        selected = g_game_state['ui_state']['selected_menu_item']
+        
+        if event.key == pygame.K_UP:
+            g_game_state['ui_state']['selected_menu_item'] = max(0, selected - 1)
+        elif event.key == pygame.K_DOWN:
+            g_game_state['ui_state']['selected_menu_item'] = min(3, selected + 1)
+        elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+            if selected == 0:  # Start Mission
+                g_game_state['current_state'] = GameState.MISSION_SELECTION.value
+                g_game_state['ui_state']['selected_menu_item'] = 0  # Reset for mission selection
+            elif selected == 1:  # Quick Battle (Test)
+                init_test_game()
+            elif selected == 2:  # Settings
+                g_game_state['current_state'] = GameState.SETTINGS.value
+            elif selected == 3:  # Exit
+                pygame.quit()
+                exit()
+
+def handle_mission_selection_input(event: pygame.event.Event):
+    """Handle mission selection input.
+    
+    Side effects:
+        Changes mission selection or advances to squad selection
+        
+    Globals:
+        Reads: g_game_state, g_mission_data
+        Writes: g_game_state
+    """
+    if event.type == pygame.KEYDOWN:
+        selected = g_game_state['ui_state']['selected_menu_item']
+        mission_keys = list(g_mission_data.keys())
+        
+        if event.key == pygame.K_UP:
+            g_game_state['ui_state']['selected_menu_item'] = max(0, selected - 1)
+        elif event.key == pygame.K_DOWN:
+            g_game_state['ui_state']['selected_menu_item'] = min(len(mission_keys) - 1, selected + 1)
+        elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+            # Select mission and advance to squad selection
+            mission_id = mission_keys[selected]
+            g_game_state['menu_state']['selected_mission_id'] = mission_id
+            g_game_state['menu_state']['selected_mission'] = g_mission_data[mission_id]
+            
+            # Set squad size based on mission (default to 4 for now)
+            g_game_state['menu_state']['max_squad_size'] = 4
+            g_game_state['menu_state']['squad_slots'] = [None] * 4
+            g_game_state['menu_state']['squad_loadouts'] = [{} for _ in range(4)]
+            
+            g_game_state['current_state'] = GameState.SQUAD_SELECTION.value
+            g_game_state['ui_state']['selected_menu_item'] = 0
+        elif event.key == pygame.K_ESCAPE:
+            g_game_state['current_state'] = GameState.MAIN_MENU.value
+
+def handle_squad_selection_input(event: pygame.event.Event):
+    """Handle squad selection input.
+    
+    Side effects:
+        Changes squad composition or advances to loadout screen
+        
+    Globals:
+        Reads: g_game_state, g_unit_templates
+        Writes: g_game_state
+    """
+    if event.type == pygame.KEYDOWN:
+        menu_state = g_game_state['menu_state']
+        selected = g_game_state['ui_state']['selected_menu_item']
+        
+        if event.key == pygame.K_UP:
+            g_game_state['ui_state']['selected_menu_item'] = max(0, selected - 1)
+        elif event.key == pygame.K_DOWN:
+            max_selection = len(menu_state['available_classes']) + menu_state['max_squad_size'] + 1  # Classes + slots + continue
+            g_game_state['ui_state']['selected_menu_item'] = min(max_selection - 1, selected + 1)
+        elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+            available_classes = menu_state['available_classes']
+            
+            if selected < len(available_classes):
+                # Select a class to assign
+                selected_class = available_classes[selected]
+                # Find first empty slot
+                for i, slot in enumerate(menu_state['squad_slots']):
+                    if slot is None:
+                        menu_state['squad_slots'][i] = selected_class
+                        print(f"[MENU] Added {selected_class} to slot {i + 1}")
+                        break
+            elif selected < len(available_classes) + menu_state['max_squad_size']:
+                # Clear a squad slot
+                slot_index = selected - len(available_classes)
+                if menu_state['squad_slots'][slot_index] is not None:
+                    menu_state['squad_slots'][slot_index] = None
+                    print(f"[MENU] Cleared slot {slot_index + 1}")
+            else:
+                # Continue to loadout (if squad has at least one member)
+                if any(slot is not None for slot in menu_state['squad_slots']):
+                    # Set current loadout slot to first occupied slot
+                    for i, slot in enumerate(menu_state['squad_slots']):
+                        if slot is not None:
+                            menu_state['current_loadout_slot'] = i
+                            break
+                    g_game_state['current_state'] = GameState.LOADOUT_SCREEN.value
+                    g_game_state['ui_state']['selected_menu_item'] = 0
+                else:
+                    print("[MENU] Need at least one squad member!")
+        elif event.key == pygame.K_ESCAPE:
+            g_game_state['current_state'] = GameState.MISSION_SELECTION.value
+
+def handle_loadout_input(event: pygame.event.Event):
+    """Handle loadout screen input.
+    
+    Side effects:
+        Changes weapon/equipment assignments or advances to briefing
+        
+    Globals:
+        Reads: g_game_state, g_weapon_data
+        Writes: g_game_state
+    """
+    if event.type == pygame.KEYDOWN:
+        menu_state = g_game_state['menu_state']
+        selected = g_game_state['ui_state']['selected_menu_item']
+        weapon_keys = list(g_weapon_data.keys())
+        
+        if event.key == pygame.K_UP:
+            g_game_state['ui_state']['selected_menu_item'] = max(0, selected - 1)
+        elif event.key == pygame.K_DOWN:
+            max_items = len(weapon_keys) + 2  # Weapons + next/back buttons
+            g_game_state['ui_state']['selected_menu_item'] = min(max_items - 1, selected + 1)
+        elif event.key == pygame.K_LEFT:
+            # Previous squad member
+            current_slot = menu_state['current_loadout_slot']
+            while True:
+                current_slot = (current_slot - 1) % menu_state['max_squad_size']
+                if menu_state['squad_slots'][current_slot] is not None:
+                    menu_state['current_loadout_slot'] = current_slot
+                    break
+                if current_slot == menu_state['current_loadout_slot']:  # Avoid infinite loop
+                    break
+        elif event.key == pygame.K_RIGHT:
+            # Next squad member
+            current_slot = menu_state['current_loadout_slot']
+            while True:
+                current_slot = (current_slot + 1) % menu_state['max_squad_size']
+                if menu_state['squad_slots'][current_slot] is not None:
+                    menu_state['current_loadout_slot'] = current_slot
+                    break
+                if current_slot == menu_state['current_loadout_slot']:  # Avoid infinite loop
+                    break
+        elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+            if selected < len(weapon_keys):
+                # Assign weapon to current squad member
+                weapon_id = weapon_keys[selected]
+                current_slot = menu_state['current_loadout_slot']
+                if menu_state['squad_slots'][current_slot] is not None:
+                    menu_state['squad_loadouts'][current_slot]['primary_weapon'] = weapon_id
+                    print(f"[MENU] Assigned {weapon_id} to slot {current_slot + 1}")
+            elif selected == len(weapon_keys):
+                # Continue to briefing
+                g_game_state['current_state'] = GameState.MISSION_BRIEFING.value
+                g_game_state['ui_state']['selected_menu_item'] = 0
+            elif selected == len(weapon_keys) + 1:
+                # Back to squad selection
+                g_game_state['current_state'] = GameState.SQUAD_SELECTION.value
+        elif event.key == pygame.K_ESCAPE:
+            g_game_state['current_state'] = GameState.SQUAD_SELECTION.value
+
+def handle_briefing_input(event: pygame.event.Event):
+    """Handle mission briefing input.
+    
+    Side effects:
+        Starts mission or returns to loadout
+        
+    Globals:
+        Reads: g_game_state
+        Writes: g_game_state
+    """
+    if event.type == pygame.KEYDOWN:
+        if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+            # Deploy to mission!
+            start_selected_mission()
+        elif event.key == pygame.K_ESCAPE:
+            g_game_state['current_state'] = GameState.LOADOUT_SCREEN.value
+
+def handle_settings_input(event: pygame.event.Event):
+    """Handle settings screen input.
+    
+    Side effects:
+        Returns to main menu
+        
+    Globals:
+        Reads: g_game_state
+        Writes: g_game_state
+    """
+    if event.type == pygame.KEYDOWN:
+        if event.key == pygame.K_ESCAPE or event.key == pygame.K_RETURN:
+            g_game_state['current_state'] = GameState.MAIN_MENU.value
+
+def render_settings():
+    """Render settings screen.
+    
+    Side effects:
+        Draws settings UI to g_screen
+        
+    Globals:
+        Reads: g_font, g_screen
+        Writes: g_screen
+    """
+    g_screen.fill((30, 30, 30))
+    
+    # Title
+    title_text = g_font.render("SETTINGS", True, (255, 255, 100))
+    title_rect = title_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, 100))
+    g_screen.blit(title_text, title_rect)
+    
+    # Placeholder settings info
+    settings_lines = [
+        "Settings screen - Coming Soon!",
+        "",
+        "Future features:",
+        "• Audio volume controls",
+        "• Display options",
+        "• Control remapping",
+        "• Difficulty settings",
+        "",
+        "Press ESC or ENTER to return to main menu"
+    ]
+    
+    for i, line in enumerate(settings_lines):
+        y_pos = 200 + i * 30
+        color = (200, 200, 200) if line else (100, 100, 100)
+        if line:
+            line_text = g_font.render(line, True, color)
+            line_rect = line_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, y_pos))
+            g_screen.blit(line_text, line_rect)
 
 # ======================================================================
 # === [15] MAIN EXECUTION
