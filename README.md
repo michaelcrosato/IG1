@@ -28,10 +28,15 @@ python main.py
 
 ### During Combat:
 - **Left Click**: Select unit or move to tile
-- **Right Click**: Show tile information
+- **Right Click**: Attack enemy unit or show tile information
 - **SPACE**: End player turn
 - **TAB**: Cycle through units
 - **O**: Put active unit on overwatch
+
+### Combat:
+- **Shooting**: Right-click on enemy units to attack (costs 4 AP)
+- **Movement**: Left-click on empty tiles to move (1 AP per tile)
+- **Overwatch**: Press O to set up overwatch (3 AP, triggers when enemies move into view)
 
 ### Debug Controls (Available in any mode):
 - **F1**: Quick save
@@ -156,26 +161,27 @@ The game includes extensive debugging capabilities:
 ## Current Status
 
 ✅ **Implemented:**
-- Basic tactical combat
-- Unit movement and selection
-- Action point system
-- Line of sight calculations
-- Save/load system
-- Debug tools
-- Data-driven content
+- **Complete tactical combat** with shooting and damage system
+- **Robust AI system** with layered behaviors (attack, cover, advance, overwatch)
+- **Unit movement and selection** with collision detection
+- **Action point system** with proper AP costs
+- **Line of sight calculations** with Bresenham's algorithm
+- **Overwatch system** with movement triggers
+- **Save/load system** with debug snapshots
+- **Debug tools** and state validation
+- **Data-driven content** with JSON configuration
 
 🔄 **In Progress:**
-- Complete AI system
-- Combat effects and animations
-- Item/equipment system
-- Mission objectives
+- Enhanced visual effects and animations
+- Item/equipment system integration
+- Mission objectives and win conditions
 
 📋 **Planned:**
-- Sound system
-- Particle effects
-- Multiple maps
-- Campaign progression
-- Advanced AI behaviors
+- Sound system and audio feedback
+- Particle effects for combat
+- Multiple maps and campaigns
+- Advanced AI tactics (flanking, suppression)
+- Character progression system
 
 ## Contributing
 

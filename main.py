@@ -480,20 +480,52 @@ def handle_tile_click(x: int, y: int):
         # Try to move active unit
         if g_game_state['active_unit_id']:
             active_unit = find_unit_by_id(g_game_state['active_unit_id'])
-            if active_unit and is_valid_position(x, y):
+            if active_unit and is_valid_position(x, y) and not is_position_occupied(x, y):
                 if can_reach_position(active_unit, x, y):
-                    old_x, old_y = active_unit[K_X], active_unit[K_Y]
                     move_unit(active_unit[K_ID], x, y)
                     print(f"[INPUT] Moved {active_unit[K_NAME]} to ({x}, {y})")
                 else:
                     print(f"[INPUT] Cannot reach ({x}, {y}) - not enough AP")
+            elif is_position_occupied(x, y):
+                print(f"[INPUT] Position ({x}, {y}) is occupied")
 
 def handle_tile_right_click(x: int, y: int):
-    """Handle right click on tile."""
-    # For now, just show tile info
-    if is_valid_position(x, y):
-        tile = g_current_map[y][x]
-        print(f"[INPUT] Tile ({x}, {y}): {tile[K_TYPE]}, Cover: {tile.get(K_COVER, 0)}")
+    """Handle right click on tile - Attack if enemy present.
+    
+    Side effects:
+        May execute attack if valid target
+        
+    Globals:
+        Reads: g_game_state, g_enemy_units
+        Writes: Various if attack occurs
+    """
+    # Check if there's an enemy at this position
+    target_enemy = None
+    for enemy in g_enemy_units:
+        if enemy[K_X] == x and enemy[K_Y] == y and enemy[K_HP] > 0:
+            target_enemy = enemy
+            break
+    
+    if target_enemy and g_game_state['active_unit_id']:
+        active_unit = find_unit_by_id(g_game_state['active_unit_id'])
+        if active_unit and active_unit[K_AP] >= Cfg.AP_COST_SHOOT:
+            # Check line of sight
+            if has_line_of_sight(active_unit[K_X], active_unit[K_Y], x, y):
+                execute_attack(active_unit[K_ID], target_enemy[K_ID])
+                active_unit[K_AP] -= Cfg.AP_COST_SHOOT
+                print(f"[COMBAT] {active_unit[K_NAME]} attacks {target_enemy[K_NAME]}!")
+            else:
+                print(f"[COMBAT] No line of sight to target!")
+                g_game_state['combat_log'].append("No line of sight to target")
+        else:
+            print(f"[COMBAT] Not enough AP to shoot (need {Cfg.AP_COST_SHOOT})")
+            g_game_state['combat_log'].append("Not enough AP to shoot")
+    else:
+        # Show tile info if no enemy
+        if is_valid_position(x, y):
+            tile = g_current_map[y][x]
+            print(f"[INPUT] Tile ({x}, {y}): {tile[K_TYPE]}, Cover: {tile.get(K_COVER, 0)}")
+            g_game_state['combat_log'].append(f"Tile ({x}, {y}): {tile[K_TYPE]}, Cover: {tile.get(K_COVER, 0)}")
 
 def cycle_active_unit():
     """Cycle to next available unit.
@@ -606,16 +638,265 @@ def update_enemy_ai():
         Reads: g_enemy_units, g_player_squad
         Writes: g_enemy_units, g_game_state
     """
-    # Simple AI: just end turn for now
-    # TODO: Implement actual AI behaviors
-    g_game_state['current_state'] = GameState.TACTICAL_COMBAT.value
+    # Process each enemy unit's turn
+    enemies_with_ap = [e for e in g_enemy_units if e[K_HP] > 0 and e[K_AP] > 0]
     
-    # Reset all player unit AP for new turn
+    if enemies_with_ap:
+        # Process one enemy at a time
+        for enemy in enemies_with_ap:
+            if enemy[K_AP] > 0:
+                ai_take_turn(enemy)
+                break  # Only process one enemy per frame to avoid long delays
+    else:
+        # All enemies done, end AI turn
+        end_enemy_turn()
+
+def end_enemy_turn():
+    """End enemy turn and start player turn.
+    
+    Side effects:
+        Resets AP for all units
+        Changes game state
+        
+    Globals:
+        Writes: g_player_squad, g_enemy_units, g_game_state
+    """
+    # Reset AP for all units
     for unit in g_player_squad:
         unit[K_AP] = unit[K_MAX_AP]
     
+    for unit in g_enemy_units:
+        unit[K_AP] = unit[K_MAX_AP]
+        # Clear overwatch status at turn end
+        if 'overwatch' in unit[K_STATUS]:
+            unit[K_STATUS].remove('overwatch')
+    
+    # Clear player overwatch too
+    for unit in g_player_squad:
+        if 'overwatch' in unit[K_STATUS]:
+            unit[K_STATUS].remove('overwatch')
+    
+    g_game_state['current_state'] = GameState.TACTICAL_COMBAT.value
     g_game_state['turn_count'] += 1
+    g_game_state['combat_log'].append(f"Turn {g_game_state['turn_count']} begins")
     print(f"[AI] Turn {g_game_state['turn_count']} - Player turn begins")
+
+def ai_take_turn(unit: Character):
+    """Execute AI behavior for one unit using priority layers.
+    
+    Side effects:
+        Modifies unit state
+        May trigger combat or movement
+        
+    Globals:
+        Various based on actions taken
+    """
+    print(f"[AI] {unit[K_NAME]} taking turn (AP: {unit[K_AP]})")
+    
+    # Layer 1: Try to attack if possible
+    if ai_try_attack_visible_enemy(unit):
+        return
+    
+    # Layer 2: Try to take cover if under fire or exposed
+    if ai_try_take_cover(unit):
+        return
+    
+    # Layer 3: Move toward nearest enemy
+    if ai_try_move_to_enemy(unit):
+        return
+    
+    # Layer 4: Set up overwatch as fallback
+    if unit[K_AP] >= Cfg.AP_COST_OVERWATCH:
+        activate_overwatch(unit[K_ID])
+        unit[K_AP] = 0  # End turn after overwatch
+    else:
+        # End turn if nothing else to do
+        unit[K_AP] = 0
+
+def ai_try_attack_visible_enemy(unit: Character) -> bool:
+    """Try to attack any visible enemy.
+    
+    Returns:
+        True if attacked, False otherwise
+    """
+    if unit[K_AP] < Cfg.AP_COST_SHOOT:
+        return False
+    
+    best_target = None
+    best_score = 0
+    
+    for player_unit in g_player_squad:
+        if player_unit[K_HP] <= 0:
+            continue
+        
+        # Check line of sight
+        if has_line_of_sight(unit[K_X], unit[K_Y], player_unit[K_X], player_unit[K_Y]):
+            hit_chance = calculate_hit_chance(unit, player_unit)
+            
+            # Score targets: prefer wounded enemies and high hit chance
+            health_factor = (player_unit[K_MAX_HP] - player_unit[K_HP]) / player_unit[K_MAX_HP]
+            score = hit_chance + (health_factor * 30)  # Bonus for wounded targets
+            
+            if score > best_score:
+                best_score = score
+                best_target = player_unit
+    
+    if best_target and best_score > 40:  # Only attack if decent chance
+        execute_attack(unit[K_ID], best_target[K_ID])
+        unit[K_AP] -= Cfg.AP_COST_SHOOT
+        return True
+    
+    return False
+
+def ai_try_take_cover(unit: Character) -> bool:
+    """Try to move to better cover if exposed.
+    
+    Returns:
+        True if moved to cover, False otherwise
+    """
+    current_tile = g_current_map[unit[K_Y]][unit[K_X]]
+    current_cover = current_tile.get(K_COVER, 0)
+    
+    # Only seek cover if currently exposed and have enough AP
+    if current_cover >= 50 or unit[K_AP] < Cfg.AP_COST_MOVE * 2:
+        return False
+    
+    # Find nearby cover positions
+    best_cover_pos = None
+    best_cover_value = current_cover
+    best_distance = float('inf')
+    
+    for dy in range(-4, 5):
+        for dx in range(-4, 5):
+            new_x = unit[K_X] + dx
+            new_y = unit[K_Y] + dy
+            
+            if not is_valid_position(new_x, new_y):
+                continue
+            
+            # Skip if occupied
+            if is_position_occupied(new_x, new_y):
+                continue
+            
+            tile = g_current_map[new_y][new_x]
+            cover_value = tile.get(K_COVER, 0)
+            distance = abs(dx) + abs(dy)
+            
+            # Prefer better cover, closer positions
+            if cover_value > best_cover_value or (cover_value == best_cover_value and distance < best_distance):
+                if can_reach_position(unit, new_x, new_y):
+                    best_cover_value = cover_value
+                    best_cover_pos = (new_x, new_y)
+                    best_distance = distance
+    
+    if best_cover_pos and best_cover_value > current_cover + 20:  # Significant improvement
+        old_x, old_y = unit[K_X], unit[K_Y]
+        move_unit(unit[K_ID], best_cover_pos[0], best_cover_pos[1])
+        print(f"[AI] {unit[K_NAME]} moved to cover at ({best_cover_pos[0]}, {best_cover_pos[1]})")
+        
+        # Check for overwatch triggers
+        check_overwatch_triggers(unit, old_x, old_y)
+        return True
+    
+    return False
+
+def ai_try_move_to_enemy(unit: Character) -> bool:
+    """Try to move toward nearest enemy.
+    
+    Returns:
+        True if moved, False otherwise
+    """
+    if unit[K_AP] < Cfg.AP_COST_MOVE:
+        return False
+    
+    nearest = find_nearest_player(unit)
+    if not nearest:
+        return False
+    
+    # Don't move if already in good attack range
+    distance = calculate_distance(unit, nearest)
+    if distance <= 8:  # Within good range
+        return False
+    
+    # Find best move toward target
+    target_x, target_y = nearest[K_X], nearest[K_Y]
+    best_move = None
+    best_distance = distance
+    
+    # Try all adjacent positions
+    for dy in [-1, 0, 1]:
+        for dx in [-1, 0, 1]:
+            if dx == 0 and dy == 0:
+                continue
+                
+            new_x = unit[K_X] + dx
+            new_y = unit[K_Y] + dy
+            
+            if not is_valid_position(new_x, new_y):
+                continue
+            
+            if is_position_occupied(new_x, new_y):
+                continue
+            
+            # Calculate distance to target
+            new_distance = math.sqrt((new_x - target_x)**2 + (new_y - target_y)**2)
+            
+            if new_distance < best_distance:
+                best_distance = new_distance
+                best_move = (new_x, new_y)
+    
+    if best_move and unit[K_AP] >= Cfg.AP_COST_MOVE:
+        old_x, old_y = unit[K_X], unit[K_Y]
+        move_unit(unit[K_ID], best_move[0], best_move[1])
+        print(f"[AI] {unit[K_NAME]} advanced toward enemy to ({best_move[0]}, {best_move[1]})")
+        
+        # Check for overwatch triggers
+        check_overwatch_triggers(unit, old_x, old_y)
+        return True
+    
+    return False
+
+def check_overwatch_triggers(moved_unit: Character, old_x: int, old_y: int):
+    """Check if movement triggers any overwatch shots.
+    
+    Side effects:
+        May execute attacks
+        Removes overwatch status after firing
+        
+    Globals:
+        Reads: All units
+        Writes: Unit status, may trigger combat
+    """
+    # Check all enemy units if player moved, and vice versa
+    if moved_unit[K_FACTION] == 'player':
+        watching_units = g_enemy_units
+    else:
+        watching_units = g_player_squad
+    
+    for watcher in watching_units:
+        if 'overwatch' in watcher[K_STATUS] and watcher[K_HP] > 0:
+            # Check if watcher can see the new position
+            if has_line_of_sight(watcher[K_X], watcher[K_Y], moved_unit[K_X], moved_unit[K_Y]):
+                # Check if they couldn't see the old position (unit emerged into view)
+                could_see_before = has_line_of_sight(watcher[K_X], watcher[K_Y], old_x, old_y)
+                
+                if not could_see_before:  # Unit moved into view
+                    # Execute overwatch shot
+                    g_game_state['combat_log'].append(f"{watcher[K_NAME]} fires overwatch at {moved_unit[K_NAME]}!")
+                    execute_attack(watcher[K_ID], moved_unit[K_ID])
+                    watcher[K_STATUS].remove('overwatch')
+                    break  # Only one overwatch shot per movement
+
+def is_position_occupied(x: int, y: int) -> bool:
+    """Check if position is occupied by any unit.
+    
+    Returns:
+        True if occupied, False otherwise
+    """
+    for unit in g_player_squad + g_enemy_units:
+        if unit[K_HP] > 0 and unit[K_X] == x and unit[K_Y] == y:
+            return True
+    return False
 
 # ======================================================================
 # === [10] RENDERING
@@ -919,6 +1200,116 @@ def has_line_of_sight(x0: int, y0: int, x1: int, y1: int) -> bool:
     
     return True
 
+def execute_attack(attacker_id: str, target_id: str):
+    """Execute attack between units.
+    
+    Side effects:
+        Modifies target health
+        Creates visual effects
+        Updates combat log
+        May trigger unit death
+        
+    Globals:
+        Reads: g_player_squad, g_enemy_units
+        Writes: g_player_squad, g_enemy_units, g_effect_queue, g_game_state
+    """
+    # Find units
+    attacker = find_unit_by_id(attacker_id)
+    target = find_unit_by_id(target_id)
+    
+    if not attacker or not target:
+        log_error(f"Could not find attacker {attacker_id} or target {target_id}")
+        return
+    
+    # Check line of sight
+    if not has_line_of_sight(attacker[K_X], attacker[K_Y], target[K_X], target[K_Y]):
+        g_game_state['combat_log'].append("No line of sight to target")
+        return
+    
+    # Calculate hit
+    hit_chance = calculate_hit_chance(attacker, target)
+    roll = random.randint(1, 100)
+    
+    if roll <= hit_chance:
+        # Calculate damage (base 25 + marksmanship bonus)
+        base_damage = 25
+        skill_bonus = (attacker['attributes'][K_MARKSMANSHIP] - 70) // 5
+        damage = max(15, base_damage + skill_bonus + random.randint(-5, 5))
+        
+        # Apply damage
+        old_hp = target[K_HP]
+        target[K_HP] = max(0, target[K_HP] - damage)
+        actual_damage = old_hp - target[K_HP]
+        
+        # Add to combat log
+        g_game_state['combat_log'].append(
+            f"{attacker[K_NAME]} hit {target[K_NAME]} for {actual_damage} damage ({hit_chance}% chance, rolled {roll})"
+        )
+        
+        # Create visual effects
+        g_effect_queue.append(create_effect(
+            'damage_text',
+            target[K_X], target[K_Y],
+            text=str(actual_damage),
+            color=(255, 100, 100),
+            duration=45
+        ))
+        
+        # Check for death
+        if target[K_HP] <= 0:
+            handle_unit_death(target)
+    else:
+        g_game_state['combat_log'].append(
+            f"{attacker[K_NAME]} missed {target[K_NAME]} ({hit_chance}% chance, rolled {roll})"
+        )
+        
+        g_effect_queue.append(create_effect(
+            'text',
+            target[K_X], target[K_Y],
+            text="MISS",
+            color=(200, 200, 200),
+            duration=30
+        ))
+
+def handle_unit_death(unit: Character):
+    """Handle unit death.
+    
+    Side effects:
+        Removes unit from appropriate list
+        Creates death effect
+        Updates combat log
+        
+    Globals:
+        Writes: g_player_squad or g_enemy_units, g_effect_queue, g_game_state
+    """
+    # Add death message
+    g_game_state['combat_log'].append(f"{unit[K_NAME]} has been killed!")
+    
+    # Create death effect
+    g_effect_queue.append(create_effect(
+        'death',
+        unit[K_X], unit[K_Y],
+        duration=60
+    ))
+    
+    # Remove from appropriate list
+    if unit[K_FACTION] == 'player':
+        if unit in g_player_squad:
+            g_player_squad.remove(unit)
+            print(f"[COMBAT] Player unit {unit[K_NAME]} eliminated!")
+    else:
+        if unit in g_enemy_units:
+            g_enemy_units.remove(unit)
+            print(f"[COMBAT] Enemy unit {unit[K_NAME]} eliminated!")
+    
+    # Clear active unit if it was the one that died
+    if g_game_state['active_unit_id'] == unit[K_ID]:
+        # Select next available unit
+        if g_player_squad:
+            g_game_state['active_unit_id'] = g_player_squad[0][K_ID]
+        else:
+            g_game_state['active_unit_id'] = None
+
 def activate_overwatch(unit_id: str):
     """Put unit into overwatch mode.
     
@@ -971,6 +1362,25 @@ def find_unit_by_id(unit_id: str) -> Optional[Character]:
             return unit
     return None
 
+def find_nearest_player(unit: Character) -> Optional[Character]:
+    """Find nearest player unit to given unit.
+    
+    Returns:
+        Nearest player unit or None if no valid targets
+    """
+    nearest = None
+    min_distance = float('inf')
+    
+    for player_unit in g_player_squad:
+        if player_unit[K_HP] <= 0:
+            continue
+        dist = calculate_distance(unit, player_unit)
+        if dist < min_distance:
+            min_distance = dist
+            nearest = player_unit
+    
+    return nearest
+
 def is_valid_position(x: int, y: int) -> bool:
     """Check if position is valid and walkable."""
     if not (0 <= y < len(g_current_map) and 0 <= x < len(g_current_map[0])):
@@ -990,6 +1400,7 @@ def move_unit(unit_id: str, new_x: int, new_y: int):
     Side effects:
         Updates unit position
         Deducts AP
+        May trigger overwatch
         
     Globals:
         Modifies unit in g_player_squad or g_enemy_units
@@ -1003,9 +1414,13 @@ def move_unit(unit_id: str, new_x: int, new_y: int):
     ap_cost = distance * Cfg.AP_COST_MOVE
     
     if unit[K_AP] >= ap_cost:
+        old_x, old_y = unit[K_X], unit[K_Y]
         unit[K_X] = new_x
         unit[K_Y] = new_y
         unit[K_AP] -= ap_cost
+        
+        # Check for overwatch triggers
+        check_overwatch_triggers(unit, old_x, old_y)
 
 # ======================================================================
 # === [13] SAVE/LOAD SYSTEM
