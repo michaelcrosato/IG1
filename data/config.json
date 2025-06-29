@@ -1,0 +1,30 @@
+{
+  "screen_width": 1280,
+  "screen_height": 720,
+  "tile_size": 32,
+  "fps": 60,
+  
+  "base_hit_chance": 75,
+  "crit_multiplier": 2.0,
+  "min_hit_chance": 5,
+  "max_hit_chance": 95,
+  
+  "ap_costs": {
+    "move": 1,
+    "shoot": 4,
+    "overwatch": 3,
+    "reload": 2,
+    "crouch": 1,
+    "use_item": 2
+  },
+  
+  "combat_modifiers": {
+    "distance_penalty_per_tile": 3,
+    "height_advantage_bonus": 10,
+    "flanking_bonus": 15
+  },
+  
+  "debug_mode": false,
+  "enable_sound": true,
+  "master_volume": 0.7
+} 

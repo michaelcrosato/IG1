@@ -1,0 +1,134 @@
+{
+  "consumables": {
+    "medkit": {
+      "name": "First Aid Kit",
+      "type": "healing",
+      "effect": "heal",
+      "value": 50,
+      "ap_cost": 3,
+      "uses": 3,
+      "description": "Restores 50 HP to target unit"
+    },
+    "bandage": {
+      "name": "Bandage",
+      "type": "healing",
+      "effect": "heal",
+      "value": 25,
+      "ap_cost": 2,
+      "uses": 1,
+      "description": "Restores 25 HP to target unit"
+    },
+    "stim_pack": {
+      "name": "Stimulant Pack",
+      "type": "enhancement",
+      "effect": "boost_ap",
+      "value": 5,
+      "ap_cost": 1,
+      "uses": 1,
+      "description": "Grants 5 additional AP this turn"
+    },
+    "frag_grenade": {
+      "name": "Fragmentation Grenade",
+      "type": "explosive",
+      "effect": "area_damage",
+      "damage": 40,
+      "radius": 2,
+      "ap_cost": 4,
+      "uses": 1,
+      "description": "Deals 40 damage in 2-tile radius"
+    },
+    "smoke_grenade": {
+      "name": "Smoke Grenade",
+      "type": "utility",
+      "effect": "obscure_vision",
+      "radius": 3,
+      "duration": 3,
+      "ap_cost": 3,
+      "uses": 1,
+      "description": "Creates smoke cloud blocking line of sight"
+    }
+  },
+  
+  "armor": {
+    "kevlar_vest": {
+      "name": "Kevlar Vest",
+      "type": "body_armor",
+      "damage_reduction": 15,
+      "durability": 100,
+      "weight": 5,
+      "description": "Light body armor providing moderate protection"
+    },
+    "tactical_armor": {
+      "name": "Tactical Armor",
+      "type": "body_armor",
+      "damage_reduction": 25,
+      "durability": 150,
+      "weight": 8,
+      "description": "Heavy tactical armor with excellent protection"
+    },
+    "combat_helmet": {
+      "name": "Combat Helmet",
+      "type": "head_armor",
+      "damage_reduction": 10,
+      "durability": 75,
+      "weight": 2,
+      "description": "Military helmet protecting against head shots"
+    }
+  },
+  
+  "equipment": {
+    "night_vision": {
+      "name": "Night Vision Goggles",
+      "type": "utility",
+      "effect": "enhanced_vision",
+      "range_bonus": 5,
+      "accuracy_bonus": 10,
+      "description": "Improves vision and accuracy in low light"
+    },
+    "radio": {
+      "name": "Tactical Radio",
+      "type": "communication",
+      "effect": "coordination",
+      "ap_bonus": 2,
+      "description": "Allows better unit coordination, +2 AP per turn"
+    },
+    "tool_kit": {
+      "name": "Engineering Kit",
+      "type": "utility",
+      "effect": "repair",
+      "uses": 5,
+      "description": "Can repair equipment and disable traps"
+    }
+  },
+  
+  "ammo": {
+    "rifle_ammo": {
+      "name": "5.56mm Ammunition",
+      "type": "ammunition",
+      "compatible_weapons": ["assault_rifle", "machine_gun"],
+      "quantity": 60,
+      "weight": 2
+    },
+    "sniper_ammo": {
+      "name": "7.62mm Ammunition",
+      "type": "ammunition",
+      "compatible_weapons": ["sniper_rifle"],
+      "quantity": 20,
+      "weight": 1
+    },
+    "pistol_ammo": {
+      "name": "9mm Ammunition",
+      "type": "ammunition",
+      "compatible_weapons": ["pistol", "submachine_gun"],
+      "quantity": 45,
+      "weight": 1
+    },
+    "shotgun_ammo": {
+      "name": "12 Gauge Shells",
+      "type": "ammunition",
+      "compatible_weapons": ["shotgun"],
+      "quantity": 25,
+      "weight": 2
+    }
+  }
+} 

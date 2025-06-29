@@ -1,0 +1,84 @@
+{
+  "templates": {
+    "soldier": {
+      "name": "Soldier",
+      "base_stats": {
+        "health": 100,
+        "action_points": 10
+      },
+      "attributes": {
+        "marksmanship": 75,
+        "agility": 60,
+        "dexterity": 70,
+        "strength": 65,
+        "wisdom": 50
+      },
+      "skills": ["overwatch", "suppressing_fire"],
+      "sprite": "soldier.png"
+    },
+    "sniper": {
+      "name": "Sniper",
+      "base_stats": {
+        "health": 80,
+        "action_points": 8
+      },
+      "attributes": {
+        "marksmanship": 90,
+        "agility": 55,
+        "dexterity": 80,
+        "strength": 50,
+        "wisdom": 70
+      },
+      "skills": ["overwatch", "aimed_shot", "camouflage"],
+      "sprite": "sniper.png"
+    },
+    "scout": {
+      "name": "Scout",
+      "base_stats": {
+        "health": 90,
+        "action_points": 12
+      },
+      "attributes": {
+        "marksmanship": 65,
+        "agility": 85,
+        "dexterity": 75,
+        "strength": 55,
+        "wisdom": 60
+      },
+      "skills": ["sprint", "spot", "smoke_grenade"],
+      "sprite": "scout.png"
+    },
+    "heavy": {
+      "name": "Heavy Gunner",
+      "base_stats": {
+        "health": 120,
+        "action_points": 8
+      },
+      "attributes": {
+        "marksmanship": 70,
+        "agility": 45,
+        "dexterity": 55,
+        "strength": 80,
+        "wisdom": 55
+      },
+      "skills": ["suppressing_fire", "heavy_weapons"],
+      "sprite": "heavy.png"
+    },
+    "medic": {
+      "name": "Combat Medic",
+      "base_stats": {
+        "health": 85,
+        "action_points": 10
+      },
+      "attributes": {
+        "marksmanship": 65,
+        "agility": 70,
+        "dexterity": 75,
+        "strength": 60,
+        "wisdom": 80
+      },
+      "skills": ["medical_training", "stabilize", "field_surgery"],
+      "sprite": "medic.png"
+    }
+  }
+} 

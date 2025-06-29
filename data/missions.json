@@ -1,0 +1,106 @@
+{
+  "mission_01": {
+    "name": "Clear the Warehouse",
+    "map_file": "map_01",
+    "briefing_text": [
+      "Intel reports hostile activity at the old warehouse.",
+      "Your objective is simple: neutralize all enemy combatants.",
+      "Expect light resistance. Good luck, commander."
+    ],
+    "objectives": [
+      {
+        "id": "eliminate_all",
+        "type": "eliminate_all_enemies",
+        "description": "Eliminate all hostiles",
+        "required": true,
+        "completed": false
+      }
+    ],
+    "optional_objectives": [
+      {
+        "id": "no_casualties",
+        "type": "no_friendly_casualties",
+        "description": "Complete mission with no casualties",
+        "bonus_cash": 2000
+      }
+    ],
+    "rewards": {
+      "cash": 5000,
+      "reputation": 10,
+      "items": ["medkit", "frag_grenade"]
+    },
+    "deployment_zones": [
+      {"x": 0, "y": 0, "width": 5, "height": 5}
+    ]
+  },
+  
+  "mission_02": {
+    "name": "Rescue Operation",
+    "map_file": "map_02",
+    "briefing_text": [
+      "A friendly operative is being held in the enemy compound.",
+      "Infiltrate the facility and extract them safely.",
+      "Time is critical - enemy reinforcements are en route."
+    ],
+    "objectives": [
+      {
+        "id": "rescue_vip",
+        "type": "rescue_target",
+        "description": "Locate and rescue the operative",
+        "target_id": "vip_01",
+        "required": true
+      },
+      {
+        "id": "extract",
+        "type": "reach_extraction",
+        "description": "Reach extraction point with VIP",
+        "extraction_zone": {"x": 25, "y": 0, "width": 5, "height": 3},
+        "required": true
+      }
+    ],
+    "turn_limit": 20,
+    "rewards": {
+      "cash": 8000,
+      "reputation": 15
+    }
+  },
+  
+  "mission_03": {
+    "name": "Convoy Ambush",
+    "map_file": "map_03",
+    "briefing_text": [
+      "Enemy convoy carrying vital supplies will pass through this area.",
+      "Set up an ambush and secure the cargo.",
+      "Minimize collateral damage to preserve the supplies."
+    ],
+    "objectives": [
+      {
+        "id": "destroy_convoy",
+        "type": "destroy_vehicles",
+        "description": "Destroy all convoy vehicles",
+        "target_count": 3,
+        "required": true
+      },
+      {
+        "id": "secure_cargo",
+        "type": "collect_items",
+        "description": "Secure cargo containers",
+        "target_items": ["supply_crate"],
+        "required": true
+      }
+    ],
+    "optional_objectives": [
+      {
+        "id": "stealth_bonus",
+        "type": "remain_undetected",
+        "description": "Complete first objective without being detected",
+        "bonus_cash": 3000
+      }
+    ],
+    "rewards": {
+      "cash": 7500,
+      "reputation": 12,
+      "items": ["tactical_armor", "rifle_ammo", "rifle_ammo"]
+    }
+  }
+} 

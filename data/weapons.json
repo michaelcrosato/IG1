@@ -1,0 +1,62 @@
+{
+  "assault_rifle": {
+    "name": "M4 Assault Rifle",
+    "damage": 30,
+    "range": 15,
+    "ap_cost": 4,
+    "ammo_capacity": 30,
+    "accuracy_modifier": 0,
+    "fire_modes": ["single", "burst"],
+    "sound": "rifle_fire.wav"
+  },
+  "sniper_rifle": {
+    "name": "SR-25 Sniper Rifle",
+    "damage": 60,
+    "range": 25,
+    "ap_cost": 6,
+    "ammo_capacity": 10,
+    "accuracy_modifier": 15,
+    "fire_modes": ["single"],
+    "sound": "sniper_fire.wav"
+  },
+  "submachine_gun": {
+    "name": "MP5 Submachine Gun",
+    "damage": 25,
+    "range": 10,
+    "ap_cost": 3,
+    "ammo_capacity": 30,
+    "accuracy_modifier": -5,
+    "fire_modes": ["single", "auto"],
+    "sound": "smg_fire.wav"
+  },
+  "shotgun": {
+    "name": "M590 Shotgun",
+    "damage": 45,
+    "range": 6,
+    "ap_cost": 4,
+    "ammo_capacity": 8,
+    "accuracy_modifier": -10,
+    "fire_modes": ["single"],
+    "sound": "shotgun_fire.wav"
+  },
+  "machine_gun": {
+    "name": "M249 Light Machine Gun",
+    "damage": 35,
+    "range": 20,
+    "ap_cost": 5,
+    "ammo_capacity": 100,
+    "accuracy_modifier": -8,
+    "fire_modes": ["burst", "auto"],
+    "sound": "mg_fire.wav"
+  },
+  "pistol": {
+    "name": "M9 Pistol",
+    "damage": 20,
+    "range": 8,
+    "ap_cost": 2,
+    "ammo_capacity": 15,
+    "accuracy_modifier": 5,
+    "fire_modes": ["single"],
+    "sound": "pistol_fire.wav"
+  }
+} 

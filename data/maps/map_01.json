@@ -1,0 +1,65 @@
+{
+  "name": "Warehouse District",
+  "width": 30,
+  "height": 20,
+  "tileset": "warehouse",
+  "description": "An old industrial warehouse with plenty of cover opportunities",
+  
+  "tiles": [
+    {
+      "pattern": "fill",
+      "tile": {"type": "floor", "cover": 0, "blocks_sight": false, "blocks_movement": false}
+    },
+    {
+      "pattern": "border",
+      "tile": {"type": "wall", "cover": 100, "blocks_sight": true, "blocks_movement": true}
+    },
+    {
+      "pattern": "scattered",
+      "positions": [
+        [5, 5], [8, 7], [12, 4], [15, 10], [18, 6], [22, 8], [25, 12],
+        [7, 15], [14, 16], [20, 14], [10, 12], [16, 8]
+      ],
+      "tile": {"type": "crate", "cover": 50, "blocks_sight": false, "blocks_movement": true}
+    },
+    {
+      "pattern": "line",
+      "start": [10, 8],
+      "end": [10, 15],
+      "tile": {"type": "wall", "cover": 100, "blocks_sight": true, "blocks_movement": true}
+    },
+    {
+      "pattern": "line",
+      "start": [20, 5],
+      "end": [20, 12],
+      "tile": {"type": "wall", "cover": 100, "blocks_sight": true, "blocks_movement": true}
+    }
+  ],
+  
+  "spawn_points": {
+    "player": [[2, 2], [3, 2], [4, 2], [2, 3], [3, 3]],
+    "enemy": [[25, 15], [26, 15], [25, 16], [27, 17], [24, 18]]
+  },
+  
+  "enemy_spawns": [
+    {"template": "soldier", "x": 25, "y": 15},
+    {"template": "soldier", "x": 26, "y": 15},
+    {"template": "scout", "x": 25, "y": 16},
+    {"template": "soldier", "x": 27, "y": 17}
+  ],
+  
+  "items": [
+    {"type": "medkit", "x": 15, "y": 10},
+    {"type": "rifle_ammo", "x": 12, "y": 8},
+    {"type": "frag_grenade", "x": 8, "y": 12}
+  ],
+  
+  "extraction_zones": [
+    {"x": 0, "y": 18, "width": 3, "height": 2}
+  ],
+  
+  "special_tiles": [
+    {"x": 6, "y": 9, "type": "cover_high", "cover": 75, "blocks_sight": false, "blocks_movement": false},
+    {"x": 17, "y": 13, "type": "cover_high", "cover": 75, "blocks_sight": false, "blocks_movement": false}
+  ]
+} 
