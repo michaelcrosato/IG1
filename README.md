@@ -51,6 +51,8 @@ The game features a fully functional mission planning system that launches on st
 - **Right Click**: Attack enemy unit
 - **TAB**: Cycle through player units
 - **SPACE**: End turn
+- **R**: Reload weapon
+- **O**: Activate overwatch
 - **ESC**: Return to main menu
 
 ### **Debug Controls**
@@ -63,15 +65,25 @@ The game features a fully functional mission planning system that launches on st
   - Move: 1 AP per tile
   - Attack: 4 AP
   - Overwatch: 3 AP
+  - **Reload: 2 AP** *(NEW)*
 - **Line of Sight**: Realistic visibility and shooting mechanics
 - **Cover System**: Use terrain for defensive bonuses
 - **Turn-Based**: Alternating player and AI turns
+
+### **Weapon Ammunition System** *(NEW)*
+- **Ammo Tracking**: Each weapon has limited ammunition capacity
+- **Ammo Consumption**: Each shot consumes 1 round
+- **Reload Action**: Press **R** to reload weapon (2 AP cost)
+- **Visual Feedback**: Ammo counters show current/max ammo
+- **Low Ammo Warnings**: Yellow/red indicators when running low
+- **Out-of-Ammo**: Units cannot attack when ammo is depleted
 
 ### **Advanced Tactics**
 - **Overwatch**: Set units to automatically fire on moving enemies
 - **Flanking**: Attack from sides/behind for damage bonuses
 - **Suppression**: Pin down enemies with heavy fire
 - **Environmental Cover**: Walls provide 100% cover, crates 50%
+- **Ammo Management**: Strategic reload timing and conservation
 
 ## 🤖 **Intelligent AI**
 
@@ -190,6 +202,7 @@ Each mission features:
 ✅ **Debug Tools**: Development and testing features  
 ✅ **Right-Click Combat**: Direct attack system with AP costs  
 ✅ **Visual Combat Effects**: Damage numbers and hit indicators  
+✅ **Weapon Ammunition System**: Ammo tracking, reload mechanics, visual feedback *(NEW)*
 
 ## 🔮 **Future Enhancements**
 

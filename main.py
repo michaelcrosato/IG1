@@ -62,6 +62,11 @@ K_STATUS = 'status_effects'
 K_INVENTORY = 'inventory'
 K_EQUIPMENT = 'equipment'
 
+# Ammo tracking keys
+K_CURRENT_AMMO = 'current_ammo'
+K_MAX_AMMO = 'max_ammo'
+K_WEAPON_TYPE = 'weapon_type'
+
 # Character attributes
 K_MARKSMANSHIP = 'marksmanship'
 K_AGILITY = 'agility'
@@ -271,6 +276,10 @@ def create_character(template_id: str, x: int, y: int) -> Character:
             'armor': None
         },
         K_INVENTORY: [],
+        # Initialize ammo tracking
+        K_CURRENT_AMMO: 0,
+        K_MAX_AMMO: 0,
+        K_WEAPON_TYPE: None,
         'attributes': template.get('attributes', {
             K_MARKSMANSHIP: 70,
             K_AGILITY: 60,
@@ -369,7 +378,10 @@ def start_selected_mission():
             # Apply weapon loadout
             loadout = menu_state['squad_loadouts'][i]
             if loadout.get('primary_weapon'):
-                unit[K_EQUIPMENT]['primary_weapon'] = loadout['primary_weapon']
+                weapon_id = loadout['primary_weapon']
+                unit[K_EQUIPMENT]['primary_weapon'] = weapon_id
+                # Initialize ammo for the weapon
+                initialize_unit_ammo(unit, weapon_id)
             
             g_player_squad.append(unit)
     
@@ -432,6 +444,12 @@ def load_map(map_name: str):
     for spawn in map_data.get('enemy_spawns', []):
         enemy = create_character(spawn['template'], spawn['x'], spawn['y'])
         enemy[K_FACTION] = 'enemy'
+        
+        # Give enemies default weapons and ammo
+        default_weapon = 'assault_rifle'  # Default enemy weapon
+        enemy[K_EQUIPMENT]['primary_weapon'] = default_weapon
+        initialize_unit_ammo(enemy, default_weapon)
+        
         g_enemy_units.append(enemy)
     
     print(f"[MAP] Loaded {map_name} ({map_width}x{map_height}) with {len(g_enemy_units)} enemies")
@@ -487,14 +505,23 @@ def init_test_game():
         create_character('soldier', 4, 2)
     ]
     
+    # Give test squad weapons and ammo
+    for unit in g_player_squad:
+        unit[K_EQUIPMENT]['primary_weapon'] = 'assault_rifle'
+        initialize_unit_ammo(unit, 'assault_rifle')
+    
     # Create enemy units
     g_enemy_units = []
     enemy1 = create_character('soldier', 17, 12)
     enemy1[K_FACTION] = 'enemy'
+    enemy1[K_EQUIPMENT]['primary_weapon'] = 'assault_rifle'
+    initialize_unit_ammo(enemy1, 'assault_rifle')
     g_enemy_units.append(enemy1)
     
     enemy2 = create_character('soldier', 18, 11)
     enemy2[K_FACTION] = 'enemy'
+    enemy2[K_EQUIPMENT]['primary_weapon'] = 'assault_rifle'
+    initialize_unit_ammo(enemy2, 'assault_rifle')
     g_enemy_units.append(enemy2)
     
     # Set first unit as active
@@ -590,6 +617,10 @@ def handle_combat_input(event: pygame.event.Event):
             # Overwatch mode
             if g_game_state['active_unit_id']:
                 activate_overwatch(g_game_state['active_unit_id'])
+        elif event.key == pygame.K_r:
+            # Reload weapon
+            if g_game_state['active_unit_id']:
+                reload_weapon(g_game_state['active_unit_id'])
         elif event.key == pygame.K_TAB:
             # Cycle through units
             cycle_active_unit()
@@ -1157,6 +1188,17 @@ def render_units():
             # Show AP as small text
             ap_text = g_font.render(f"AP:{unit[K_AP]}", True, (255, 255, 255))
             g_screen.blit(ap_text, (screen_x, screen_y + Cfg.TILE_SIZE - 15))
+            
+            # Show ammo if unit has a weapon
+            if unit[K_WEAPON_TYPE]:
+                ammo_color = (255, 255, 255)  # White for normal
+                if unit[K_CURRENT_AMMO] <= unit[K_MAX_AMMO] // 4:  # Low ammo warning
+                    ammo_color = (255, 255, 100)  # Yellow
+                if unit[K_CURRENT_AMMO] <= 0:  # Out of ammo
+                    ammo_color = (255, 100, 100)  # Red
+                
+                ammo_text = g_font.render(f"AMMO:{unit[K_CURRENT_AMMO]}/{unit[K_MAX_AMMO]}", True, ammo_color)
+                g_screen.blit(ammo_text, (screen_x, screen_y + Cfg.TILE_SIZE - 30))
 
     # Render enemy units
     for unit in g_enemy_units:
@@ -1217,6 +1259,25 @@ def render_ui():
         text_surface = g_font.render(entry, True, (200, 200, 200))
         g_screen.blit(text_surface, (10, log_y + 10 + i * 18))
     
+    # Combat controls (bottom right)
+    controls_x = Cfg.SCREEN_WIDTH - 200
+    controls_y = log_y + 10
+    
+    controls_text = [
+        "Controls:",
+        "LEFT CLICK: Move/Select",
+        "RIGHT CLICK: Attack",
+        "R: Reload Weapon",
+        "O: Overwatch",
+        "TAB: Cycle Units",
+        "SPACE: End Turn"
+    ]
+    
+    for i, control in enumerate(controls_text):
+        color = (255, 255, 100) if i == 0 else (150, 150, 150)
+        control_surface = g_font.render(control, True, color)
+        g_screen.blit(control_surface, (controls_x, controls_y + i * 16))
+    
     # Active unit info (top right)
     if g_game_state['active_unit_id']:
         active_unit = find_unit_by_id(g_game_state['active_unit_id'])
@@ -1233,6 +1294,17 @@ def render_ui():
             g_screen.blit(name_text, (info_x + 5, info_y + 5))
             g_screen.blit(hp_text, (info_x + 5, info_y + 25))
             g_screen.blit(ap_text, (info_x + 5, info_y + 45))
+            
+            # Show ammo if unit has a weapon
+            if active_unit[K_WEAPON_TYPE]:
+                ammo_color = (255, 255, 255)  # White for normal
+                if active_unit[K_CURRENT_AMMO] <= active_unit[K_MAX_AMMO] // 4:  # Low ammo warning
+                    ammo_color = (255, 255, 100)  # Yellow
+                if active_unit[K_CURRENT_AMMO] <= 0:  # Out of ammo
+                    ammo_color = (255, 100, 100)  # Red
+                
+                ammo_text = g_font.render(f"Ammo: {active_unit[K_CURRENT_AMMO]}/{active_unit[K_MAX_AMMO]}", True, ammo_color)
+                g_screen.blit(ammo_text, (info_x + 5, info_y + 65))
     
     # Debug overlay
     if g_game_state['ui_state']['debug_overlay']:
@@ -1797,6 +1869,7 @@ def execute_attack(attacker_id: str, target_id: str):
         Creates visual effects
         Updates combat log
         May trigger unit death
+        Consumes ammo
         
     Globals:
         Reads: g_player_squad, g_enemy_units
@@ -1810,10 +1883,25 @@ def execute_attack(attacker_id: str, target_id: str):
         log_error(f"Could not find attacker {attacker_id} or target {target_id}")
         return
     
+    # Check if attacker has ammo
+    if attacker[K_CURRENT_AMMO] <= 0:
+        g_game_state['combat_log'].append(f"{attacker[K_NAME]} is out of ammo!")
+        g_effect_queue.append(create_effect(
+            'text',
+            attacker[K_X], attacker[K_Y],
+            text="OUT OF AMMO",
+            color=(255, 100, 100),
+            duration=45
+        ))
+        return
+    
     # Check line of sight
     if not has_line_of_sight(attacker[K_X], attacker[K_Y], target[K_X], target[K_Y]):
         g_game_state['combat_log'].append("No line of sight to target")
         return
+    
+    # Consume ammo
+    attacker[K_CURRENT_AMMO] -= 1
     
     # Calculate hit
     hit_chance = calculate_hit_chance(attacker, target)
@@ -1859,6 +1947,10 @@ def execute_attack(attacker_id: str, target_id: str):
             color=(200, 200, 200),
             duration=30
         ))
+    
+    # Show ammo status after attack
+    ammo_status = f"({attacker[K_CURRENT_AMMO]}/{attacker[K_MAX_AMMO]})"
+    g_game_state['combat_log'].append(f"{attacker[K_NAME]} ammo: {ammo_status}")
 
 def handle_unit_death(unit: Character):
     """Handle unit death.
@@ -2344,6 +2436,67 @@ def render_settings():
             line_text = g_font.render(line, True, color)
             line_rect = line_text.get_rect(center=(Cfg.SCREEN_WIDTH // 2, y_pos))
             g_screen.blit(line_text, line_rect)
+
+def initialize_unit_ammo(unit: Character, weapon_id: str):
+    """Initialize ammo for a unit based on their weapon.
+    
+    Side effects:
+        Updates unit's ammo tracking
+        
+    Globals:
+        Reads: g_weapon_data
+    """
+    weapon_data = g_weapon_data.get(weapon_id, {})
+    ammo_capacity = weapon_data.get('ammo_capacity', 30)
+    
+    unit[K_WEAPON_TYPE] = weapon_id
+    unit[K_MAX_AMMO] = ammo_capacity
+    unit[K_CURRENT_AMMO] = ammo_capacity  # Start with full ammo
+    
+    print(f"[AMMO] {unit[K_NAME]} equipped {weapon_data.get('name', weapon_id)} with {ammo_capacity} ammo")
+
+def reload_weapon(unit_id: str) -> bool:
+    """Reload unit's weapon.
+    
+    Returns:
+        True if reload was successful, False otherwise
+        
+    Side effects:
+        Updates unit's ammo and deducts AP
+        
+    Globals:
+        Reads: g_player_squad, g_enemy_units
+        Writes: Unit ammo and AP
+    """
+    unit = find_unit_by_id(unit_id)
+    if not unit:
+        return False
+    
+    # Check if unit has AP and needs reload
+    if unit[K_AP] < Cfg.AP_COST_RELOAD:
+        g_game_state['combat_log'].append(f"{unit[K_NAME]} doesn't have enough AP to reload")
+        return False
+    
+    if unit[K_CURRENT_AMMO] >= unit[K_MAX_AMMO]:
+        g_game_state['combat_log'].append(f"{unit[K_NAME]}'s weapon is already full")
+        return False
+    
+    # Perform reload
+    unit[K_AP] -= Cfg.AP_COST_RELOAD
+    unit[K_CURRENT_AMMO] = unit[K_MAX_AMMO]
+    
+    g_game_state['combat_log'].append(f"{unit[K_NAME]} reloaded weapon ({unit[K_CURRENT_AMMO]}/{unit[K_MAX_AMMO]})")
+    
+    # Create reload effect
+    g_effect_queue.append(create_effect(
+        'text',
+        unit[K_X], unit[K_Y],
+        text="RELOAD",
+        color=(100, 255, 100),
+        duration=30
+    ))
+    
+    return True
 
 # ======================================================================
 # === [15] MAIN EXECUTION
